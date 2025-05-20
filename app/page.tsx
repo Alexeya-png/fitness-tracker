@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import { AnalysisForm } from "@/components/analysis-form" // Изменено на именованный импорт
 
 import { useEffect, useState } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -9,7 +10,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { auth, db } from "@/lib/firebase"
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth"
@@ -271,7 +271,7 @@ export default function FitnessTracker() {
     const fats = Number.parseInt(formData.get("fats") as string)
     const carbs = Number.parseInt(formData.get("carbs") as string)
     const water = Number.parseInt(formData.get("water") as string)
-    const mealTime = (formData.get("mealTime") as string) || "morning"
+    const mealTime = (formData.get("mealTime") as string) || calculationResult?.mealTime || "morning"
     const limitExceeded = formData.get("limitExceeded") === "on"
 
     const now = new Date(currentDate)
@@ -564,29 +564,43 @@ export default function FitnessTracker() {
     }
   }
 
-  const handleFoodAnalysis = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const formData = new FormData(e.currentTarget)
-    const description = formData.get("description") as string
-
+  // Функция для анализа еды и заполнения формы отслеживания
+  const handleAnalyzeFood = async (description: string, mealTime: string) => {
     setFoodAnalysisLoading(true)
     setFoodAnalysisResult("")
 
     try {
-      const response = await analyzeFoodWithOpenAI(description)
+      const response = await analyzeFoodWithOpenAI(description, mealTime)
       setFoodAnalysisResult(response.result)
 
+      // Извлекаем данные о питательных веществах из ответа
+      const nutritionData = extractNutritionData(response.result, mealTime)
+
+      // Устанавливаем данные в состояние calculationResult
+      setCalculationResult(nutritionData)
+
+      // Сохраняем анализ в истории, если пользователь авторизован
       if (user) {
         try {
           await addDoc(collection(db, "users", user.uid, "food_analysis"), {
             description,
             result: response.result,
+            mealTime,
+            nutritionData,
             timestamp: new Date().toISOString(),
           })
         } catch (error) {
           console.error("Error saving food analysis:", error)
         }
       }
+
+      // Переходим на вкладку отслеживания с предзаполненными данными
+      setActiveTab("tracking")
+
+      toast({
+        title: "Аналіз завершено",
+        description: "Дані про поживні речовини додані до форми відстеження",
+      })
     } catch (error) {
       console.error("Error analyzing food:", error)
       toast({
@@ -813,7 +827,6 @@ export default function FitnessTracker() {
               <CardDescription>Відстежуйте ваше щоденне споживання поживних речовин</CardDescription>
             </CardHeader>
             <CardContent>
-              // Заменим текст в форме отслеживания
               {!user ? (
                 <div className="text-center p-4">
                   <p className="mb-4">Вам потрібно увійти в систему, щоб відстежувати харчування</p>
@@ -882,10 +895,10 @@ export default function FitnessTracker() {
                       <Label htmlFor="water">Вода (мл)</Label>
                       <Input id="water" name="water" type="number" placeholder="Наприклад: 2000" required />
                     </div>
-                    // Заменим текст в селекторе времени приема пищи
+                    ''{" "}
                     <div className="grid gap-2">
                       <Label htmlFor="mealTime">Час прийому їжі</Label>
-                      <Select name="mealTime" defaultValue="morning">
+                      <Select name="mealTime" defaultValue={calculationResult?.mealTime || "morning"}>
                         <SelectTrigger id="mealTime">
                           <SelectValue placeholder="Виберіть час прийому їжі" />
                         </SelectTrigger>
@@ -934,42 +947,75 @@ export default function FitnessTracker() {
         </TabsContent>
 
         <TabsContent value="analysis">
-          <Card>
-            <CardHeader>
-              <CardTitle>Аналіз харчування</CardTitle>
-              <CardDescription>Аналіз харчової цінності продуктів</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleFoodAnalysis}>
-                <div className="grid gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="description">Опис їжі</Label>
-                    <Textarea
-                      id="description"
-                      name="description"
-                      placeholder="Наприклад: 100г курячої грудки з 1 склянкою рису та овочами"
-                      rows={4}
-                      required
-                    />
-                  </div>
-                  <Button type="submit" disabled={foodAnalysisLoading}>
-                    {foodAnalysisLoading ? "Аналіз..." : "Аналіз їжі"}
-                  </Button>
-                </div>
-              </form>
-
-              {foodAnalysisResult && (
-                <div className="mt-6 p-4 bg-muted rounded-md">
-                  <h3 className="font-medium mb-2">Результати аналіза:</h3>
-                  <pre className="whitespace-pre-wrap text-sm">{foodAnalysisResult}</pre>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <AnalysisForm onAnalyze={handleAnalyzeFood} isLoading={foodAnalysisLoading} result={foodAnalysisResult} />
         </TabsContent>
       </Tabs>
-
+      {calculationResult && (
+        <div className="flex justify-center w-full my-6">
+          <div className="w-full max-w-2xl">
+            <Card className="bg-gradient-to-br from-emerald-900 to-neutral-900 border border-emerald-500/50 rounded-xl shadow-xl overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+              <CardHeader className="pb-2 border-b border-emerald-500/20">
+                <CardTitle className="text-xl text-emerald-300 font-semibold flex items-center gap-2">
+                  Ваша норма
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+                  {[
+                    { label: "Калорії", value: calculationResult.calories, unit: "" },
+                    { label: "Білки", value: calculationResult.proteins, unit: "г" },
+                    { label: "Жири", value: calculationResult.fats, unit: "г" },
+                    { label: "Вуглеводи", value: calculationResult.carbs, unit: "г" },
+                  ].map((item, index) => (
+                    <div
+                      key={index}
+                      className="bg-black/20 rounded-lg p-3 backdrop-blur-sm transform transition-all hover:scale-105"
+                    >
+                      <div className="text-emerald-300 text-xs uppercase tracking-wider mb-1">{item.label}</div>
+                      <div className="text-2xl font-bold text-white flex items-center justify-center">
+                        {item.value}
+                        <span className="text-sm ml-1 text-emerald-300/80">{item.unit}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end mt-6">
+                  <Button
+                    variant="outline"
+                    className="text-emerald-300 border-emerald-500/50 hover:bg-emerald-900/50 hover:text-emerald-200 transition-all"
+                    size="sm"
+                    onClick={() => setCalculationResult(null)}
+                  >
+                    Очистити результат
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
       <Toaster />
     </div>
   )
+}
+
+const extractNutritionData = (text: string, mealTime?: string) => {
+  const caloriesMatch = text.match(/калорі[йї]:\s*(\d+)/i) || text.match(/калорі[йї]\s*[-–:]\s*(\d+)/i)
+  const proteinsMatch = text.match(/білк[иі]:\s*(\d+)/i) || text.match(/білк[иі]\s*[-–:]\s*(\d+)/i)
+  const fatsMatch = text.match(/жир[иі]:\s*(\d+)/i) || text.match(/жир[иі]\s*[-–:]\s*(\d+)/i)
+  const carbsMatch = text.match(/вуглевод[иі]:\s*(\d+)/i) || text.match(/вуглевод[иі]\s*[-–:]\s*(\d+)/i)
+
+  const calories = caloriesMatch ? Number.parseInt(caloriesMatch[1]) : 0
+  const proteins = proteinsMatch ? Number.parseInt(proteinsMatch[1]) : 0
+  const fats = fatsMatch ? Number.parseInt(fatsMatch[1]) : 0
+  const carbs = carbsMatch ? Number.parseInt(carbsMatch[1]) : 0
+
+  return {
+    calories,
+    proteins,
+    fats,
+    carbs,
+    mealTime,
+  }
 }
