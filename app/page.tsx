@@ -93,6 +93,7 @@ export default function FitnessTracker() {
     }
   }
 
+  // Изменим функцию checkTodayEntry, чтобы она правильно определяла наличие всех приемов пищи
   const checkTodayEntry = async (uid: string) => {
     try {
       const today = currentDate.toISOString().split("T")[0]
@@ -100,9 +101,23 @@ export default function FitnessTracker() {
       const q = query(dailyRef, where("date", "==", today))
 
       const querySnapshot = await getDocs(q)
-      setHasEntryToday(!querySnapshot.empty)
+      const entries = querySnapshot.docs.map((doc) => doc.data())
+
+      // Проверяем, есть ли записи для всех приемов пищи
+      const hasMorning = entries.some((entry) => entry.mealTime === "morning")
+      const hasAfternoon = entries.some((entry) => entry.mealTime === "afternoon")
+      const hasEvening = entries.some((entry) => entry.mealTime === "evening")
+
+      // Если есть все три приема пищи, устанавливаем флаг и переходим на вкладку статистики
+      if (hasMorning && hasAfternoon && hasEvening) {
+        setHasEntryToday(true)
+        setActiveTab("tracking") // Переходим на вкладку отслеживания, чтобы показать сообщение
+      } else {
+        setHasEntryToday(false)
+      }
     } catch (error) {
       console.error("Error checking today entry:", error)
+      setHasEntryToday(false) // В случае ошибки сбрасываем флаг
     }
   }
 
@@ -218,104 +233,155 @@ export default function FitnessTracker() {
     setActiveTab("tracking")
   }
 
+  // Изменим функцию handleSaveDaily, чтобы после сохранения последнего приема пищи переходить на вкладку отслеживания
   const handleSaveDaily = async (e: React.FormEvent<HTMLFormElement>) => {
-  e.preventDefault()
+    e.preventDefault()
 
-  const form = e.currentTarget //
+    const form = e.currentTarget
 
-  if (!user) {
-    toast({
-      title: "Помилка",
-      description: "Ви повинні увійти в систему, щоб зберегти дані",
-      variant: "destructive",
-    })
-    return
-  }
+    // Заменим русские строки на украинские в интерфейсе
 
-  if (hasEntryToday) {
-    toast({
-      title: "Обмеження",
-      description: "Ви вже зберегли дані на сьогодні. Можна зробити лише один запис на день",
-      variant: "destructive",
-    })
-    return
-  }
-
-  const formData = new FormData(form)
-  const calories = Number.parseInt(formData.get("calories") as string)
-  const proteins = Number.parseInt(formData.get("proteins") as string)
-  const fats = Number.parseInt(formData.get("fats") as string)
-  const carbs = Number.parseInt(formData.get("carbs") as string)
-  const water = Number.parseInt(formData.get("water") as string)
-  const limitExceeded = formData.get("limitExceeded") === "on"
-
-  const now = new Date(currentDate)
-  const dateStr = now.toISOString().split("T")[0]
-  const entryId = dateStr
-
-  const dailyData = {
-    calories,
-    proteins,
-    fats,
-    carbs,
-    water,
-    limitExceeded,
-    timestamp: now.toISOString(),
-    date: dateStr,
-  }
-
-  try {
-    await setDoc(doc(db, "users", user.uid, "daily", entryId), dailyData)
-
-    const userDocRef = doc(db, "users", user.uid)
-    const userDoc = await getDoc(userDocRef)
-    const userData = userDoc.data()
-
-    let streak = userData?.streak || 0
-    const lastDate = userData?.last_date || ""
-
-    const lastDateObj = lastDate ? new Date(lastDate) : null
-    const yesterday = new Date(now)
-    yesterday.setDate(yesterday.getDate() - 1)
-    const isConsecutiveDay =
-      lastDateObj &&
-      lastDateObj.getFullYear() === yesterday.getFullYear() &&
-      lastDateObj.getMonth() === yesterday.getMonth() &&
-      lastDateObj.getDate() === yesterday.getDate()
-
-    if (!limitExceeded) {
-      if (isConsecutiveDay || !lastDate) {
-        streak += 1
-      } else if (lastDate !== dateStr) {
-        streak = 1
+    // Заменим строки в форме отслеживания
+    const getMealTimeName = (mealTime: string): string => {
+      switch (mealTime) {
+        case "morning":
+          return "Ранок"
+        case "afternoon":
+          return "День"
+        case "evening":
+          return "Вечір"
+        default:
+          return "Невідомо"
       }
-      await setDoc(userDocRef, { ...userData, streak, last_date: dateStr }, { merge: true })
-    } else {
-      await setDoc(userDocRef, { ...userData, streak: 0, last_date: dateStr }, { merge: true })
-      streak = 0
     }
 
-    toast({
-      title: "Успіх",
-      description: `Дані успішно збережено. Поточна серія: ${streak} днів`,
-    })
+    // Заменим сообщения об ошибках и успехе
+    if (!user) {
+      toast({
+        title: "Помилка",
+        description: "Ви повинні увійти в систему, щоб зберегти дані",
+        variant: "destructive",
+      })
+      return
+    }
 
-    form.reset() //
-    setCalculationResult(null)
-    setHasEntryToday(true)
+    const formData = new FormData(form)
+    const calories = Number.parseInt(formData.get("calories") as string)
+    const proteins = Number.parseInt(formData.get("proteins") as string)
+    const fats = Number.parseInt(formData.get("fats") as string)
+    const carbs = Number.parseInt(formData.get("carbs") as string)
+    const water = Number.parseInt(formData.get("water") as string)
+    const mealTime = (formData.get("mealTime") as string) || "morning"
+    const limitExceeded = formData.get("limitExceeded") === "on"
 
-    fetchHistory(user.uid)
-    fetchUserProfile(user.uid)
-    setActiveTab("statistics")
-  } catch (error) {
-    console.error("Error saving daily data:", error)
-    toast({
-      title: "Помилка",
-      description: "Не вдалося зберегти щоденні дані",
-      variant: "destructive",
-    })
+    const now = new Date(currentDate)
+    const dateStr = now.toISOString().split("T")[0]
+    const entryId = `${dateStr}_${mealTime}`
+
+    // Проверяем, есть ли уже запись за этот день и время приема пищи
+    try {
+      const docRef = doc(db, "users", user.uid, "daily", entryId)
+      const docSnap = await getDoc(docRef)
+
+      // Заменим сообщение о существующей записи
+      if (docSnap.exists()) {
+        toast({
+          title: "Запис вже існує",
+          description: `Ви вже зберегли дані на ${currentDate.toLocaleDateString()} (${getMealTimeName(mealTime)})`,
+          variant: "destructive",
+        })
+        return
+      }
+
+      const dailyData = {
+        calories,
+        proteins,
+        fats,
+        carbs,
+        water,
+        limitExceeded,
+        timestamp: now.toISOString(),
+        date: dateStr,
+        mealTime,
+        mealTimeName: getMealTimeName(mealTime),
+      }
+
+      await setDoc(doc(db, "users", user.uid, "daily", entryId), dailyData)
+
+      // Обновляем серию только если это последний прием пищи (вечер)
+      // или если это единственный прием пищи за день
+      // или если это единственный прием пищи за день
+      if (mealTime === "evening" || !(await hasMealForDay(user.uid, dateStr, ["morning", "afternoon"]))) {
+        const userDocRef = doc(db, "users", user.uid)
+        const userDoc = await getDoc(userDocRef)
+        const userData = userDoc.data()
+
+        let streak = userData?.streak || 0
+        const lastDate = userData?.last_date || ""
+
+        const lastDateObj = lastDate ? new Date(lastDate) : null
+        const currentDateObj = new Date(now)
+
+        // Проверяем, является ли текущая дата следующим днем после последней записи
+        let isConsecutiveDay = false
+
+        if (lastDateObj) {
+          // Создаем объекты дат без времени для корректного сравнения
+          const lastDateOnly = new Date(lastDateObj.getFullYear(), lastDateObj.getMonth(), lastDateObj.getDate())
+          const currentDateOnly = new Date(
+            currentDateObj.getFullYear(),
+            currentDateObj.getMonth(),
+            currentDateObj.getDate(),
+          )
+
+          // Вычисляем разницу в днях между датами
+          const timeDiff = currentDateOnly.getTime() - lastDateOnly.getTime()
+          const daysDiff = Math.round(timeDiff / (1000 * 3600 * 24))
+
+          // Если разница ровно 1 день, то это последовательный день
+          isConsecutiveDay = daysDiff === 1
+
+          // Если разница больше 1 дня, значит пользователь пропустил день(и) и серия должна сброситься
+          if (daysDiff > 1) {
+            streak = 0
+          }
+        }
+
+        if (!limitExceeded) {
+          if (isConsecutiveDay || !lastDate) {
+            streak += 1
+          } else if (lastDate !== dateStr) {
+            streak = 1
+          }
+          await setDoc(userDocRef, { ...userData, streak, last_date: dateStr }, { merge: true })
+        } else {
+          await setDoc(userDocRef, { ...userData, streak: 0, last_date: dateStr }, { merge: true })
+          streak = 0
+        }
+      }
+
+      // Заменим сообщение об успешном сохранении
+      toast({
+        title: "Успіх",
+        description: `Дані успішно збережені для ${getMealTimeName(mealTime)}`,
+      })
+
+      form.reset()
+      setCalculationResult(null)
+      fetchHistory(user.uid)
+      fetchUserProfile(user.uid)
+
+      // Проверяем, заполнены ли все приемы пищи за день
+      await checkTodayEntry(user.uid)
+    } catch (error) {
+      console.error("Error saving daily data:", error)
+      toast({
+        title: "Ошибка",
+        description: "Не удалось сохранить данные",
+        variant: "destructive",
+      })
+    }
   }
-}
 
   const handleDeleteEntry = async (entryId: string) => {
     if (!user) return
@@ -341,7 +407,6 @@ export default function FitnessTracker() {
       toast({
         title: "Помилка",
         description: "Не вдалось видалити запис",
-        variant: "destructive",
       })
     }
   }
@@ -412,18 +477,90 @@ export default function FitnessTracker() {
     }
   }
 
-  const advanceToNextDay = () => {
+  // Изменим функцию advanceToNextDay, чтобы она корректно сбрасывала флаг hasEntryToday
+  // и проверяла наличие записей в новом дне
+
+  const advanceToNextDay = async () => {
     const nextDay = new Date(currentDate)
     nextDay.setDate(nextDay.getDate() + 1)
+
+    // Сначала проверяем, были ли записи за текущий день перед переходом на следующий
+    if (user) {
+      const currentDateStr = currentDate.toISOString().split("T")[0]
+      const hasAnyMealToday = await checkAnyMealForDay(user.uid, currentDateStr)
+
+      if (!hasAnyMealToday) {
+        // Если записей не было, сбрасываем серию
+        const userDocRef = doc(db, "users", user.uid)
+        const userDoc = await getDoc(userDocRef)
+        const userData = userDoc.data()
+
+        await setDoc(
+          userDocRef,
+          {
+            ...userData,
+            streak: 0,
+            last_date: currentDateStr,
+          },
+          { merge: true },
+        )
+
+        // Обновляем данные профиля пользователя
+        fetchUserProfile(user.uid)
+
+        toast({
+          title: "Серія скинута",
+          description: "Ви не зробили жодного запису за поточний день, серія скинута до 0",
+          variant: "destructive",
+        })
+      }
+    }
+
+    // Теперь устанавливаем новую дату
     setCurrentDate(nextDay)
+
+    // Важно: сразу сбрасываем флаг hasEntryToday, чтобы пользователь мог заполнить новый день
+    setHasEntryToday(false)
 
     toast({
       title: "Тестовий режим",
       description: `Дата змінена на ${nextDay.toLocaleDateString()}`,
     })
 
+    // Проверяем наличие записей в новом дне
     if (user) {
-      checkTodayEntry(user.uid)
+      const nextDayStr = nextDay.toISOString().split("T")[0]
+      const dailyRef = collection(db, "users", user.uid, "daily")
+      const q = query(dailyRef, where("date", "==", nextDayStr))
+
+      const querySnapshot = await getDocs(q)
+      const entries = querySnapshot.docs.map((doc) => doc.data())
+
+      // Проверяем, есть ли записи для всех приемов пищи в новом дне
+      const hasMorning = entries.some((entry) => entry.mealTime === "morning")
+      const hasAfternoon = entries.some((entry) => entry.mealTime === "afternoon")
+      const hasEvening = entries.some((entry) => entry.mealTime === "evening")
+
+      // Устанавливаем флаг hasEntryToday только если есть все три приема пищи
+      if (hasMorning && hasAfternoon && hasEvening) {
+        setHasEntryToday(true)
+      } else {
+        // Если не все приемы пищи заполнены, переходим на вкладку отслеживания
+        setActiveTab("tracking")
+      }
+    }
+  }
+
+  // Функция для проверки наличия любых записей за день
+  const checkAnyMealForDay = async (uid: string, date: string): Promise<boolean> => {
+    try {
+      const dailyRef = collection(db, "users", uid, "daily")
+      const q = query(dailyRef, where("date", "==", date))
+      const querySnapshot = await getDocs(q)
+      return !querySnapshot.empty
+    } catch (error) {
+      console.error("Error checking meals for day:", error)
+      return false
     }
   }
 
@@ -487,6 +624,19 @@ export default function FitnessTracker() {
 
   const navigateToTab = (tabValue: string) => {
     setActiveTab(tabValue)
+  }
+
+  // Функция для получения названия времени приема пищи
+  const hasMealForDay = async (uid: string, date: string, mealTimes: string[]): Promise<boolean> => {
+    for (const mealTime of mealTimes) {
+      const entryId = `${date}_${mealTime}`
+      const docRef = doc(db, "users", uid, "daily", entryId)
+      const docSnap = await getDoc(docRef)
+      if (docSnap.exists()) {
+        return true
+      }
+    }
+    return false
   }
 
   return (
@@ -638,8 +788,12 @@ export default function FitnessTracker() {
                         <SelectItem value="1.2">Сидячий спосіб життя (мало або зовсім немає фізичних вправ)</SelectItem>
                         <SelectItem value="1.375">Легка активність (легкі вправи 1-3 рази на тиждень)</SelectItem>
                         <SelectItem value="1.55">Помірна активність (помірні вправи 3-5 разів на тиждень)</SelectItem>
-                        <SelectItem value="1.725">Висока активність (інтенсивні вправи 6-7 разів на тиждень)</SelectItem>
-                        <SelectItem value="1.9">Дуже висока активність (дуже інтенсивні вправи та фізична робота)</SelectItem>
+                        <SelectItem value="1.725">
+                          Висока активність (інтенсивні вправи 6-7 разів на тиждень)
+                        </SelectItem>
+                        <SelectItem value="1.9">
+                          Дуже висока активність (дуже інтенсивні вправи та фізична робота)
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -659,15 +813,17 @@ export default function FitnessTracker() {
               <CardDescription>Відстежуйте ваше щоденне споживання поживних речовин</CardDescription>
             </CardHeader>
             <CardContent>
+              // Заменим текст в форме отслеживания
               {!user ? (
                 <div className="text-center p-4">
                   <p className="mb-4">Вам потрібно увійти в систему, щоб відстежувати харчування</p>
-                  <Button onClick={() => navigateToTab("auth")}>Перейти к входу</Button>
+                  <Button onClick={() => navigateToTab("auth")}>Перейти до входу</Button>
                 </div>
               ) : hasEntryToday ? (
                 <div className="text-center p-4">
-                  <p className="mb-4">Ви вже зберегли дані на сьогодні ({currentDate.toLocaleDateString()})</p>
-                  <p className="mb-4">Можна зробити тільки один запис на день</p>
+                  <p className="mb-4">
+                    Ви вже зберегли всі прийоми їжі на сьогодні ({currentDate.toLocaleDateString()})
+                  </p>
                   <div className="flex justify-center gap-4">
                     <Button onClick={() => navigateToTab("statistics")}>Перейти до статистики</Button>
                     <Button variant="outline" onClick={advanceToNextDay}>
@@ -725,6 +881,20 @@ export default function FitnessTracker() {
                     <div className="grid gap-2">
                       <Label htmlFor="water">Вода (мл)</Label>
                       <Input id="water" name="water" type="number" placeholder="Наприклад: 2000" required />
+                    </div>
+                    // Заменим текст в селекторе времени приема пищи
+                    <div className="grid gap-2">
+                      <Label htmlFor="mealTime">Час прийому їжі</Label>
+                      <Select name="mealTime" defaultValue="morning">
+                        <SelectTrigger id="mealTime">
+                          <SelectValue placeholder="Виберіть час прийому їжі" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="morning">Ранок</SelectItem>
+                          <SelectItem value="afternoon">День</SelectItem>
+                          <SelectItem value="evening">Вечір</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="flex items-center space-x-2 self-end">
                       <Checkbox id="limitExceeded" name="limitExceeded" />

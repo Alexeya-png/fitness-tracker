@@ -54,7 +54,7 @@ export function StatisticsDashboard({ historyData, userProfile, onDeleteEntry }:
       acc[date] = {
         entries: [],
         date: date,
-        id: item.id,
+        id: date,
       }
     }
     acc[date].entries.push(item)
@@ -69,20 +69,43 @@ export function StatisticsDashboard({ historyData, userProfile, onDeleteEntry }:
       const totalFats = entries.reduce((sum: number, entry: any) => sum + entry.fats, 0)
       const totalCarbs = entries.reduce((sum: number, entry: any) => sum + entry.carbs, 0)
       const totalWater = entries.reduce((sum: number, entry: any) => sum + entry.water, 0)
+      const anyLimitExceeded = entries.some((entry: any) => entry.limitExceeded)
+
+      // Сохраняем оригинальные записи для отображения в таблице
+      const mealEntries = entries.map((entry: any) => ({
+        ...entry,
+        id: entry.id || `${entry.date}_${entry.mealTime || "unknown"}`,
+        mealTimeName: entry.mealTimeName || getMealTimeName(entry.mealTime) || "Весь день",
+      }))
 
       return {
         date: group.date,
         id: group.id,
         formattedDate: new Date(group.date).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }),
-        calories: Math.round(totalCalories / entries.length),
-        proteins: Math.round(totalProteins / entries.length),
-        fats: Math.round(totalFats / entries.length),
-        carbs: Math.round(totalCarbs / entries.length),
-        water: Math.round(totalWater / entries.length),
-        limitExceeded: entries[0].limitExceeded,
+        calories: totalCalories,
+        proteins: totalProteins,
+        fats: totalFats,
+        carbs: totalCarbs,
+        water: totalWater,
+        limitExceeded: anyLimitExceeded,
+        mealEntries: mealEntries,
       }
     })
     .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+  // Функция для получения названия времени приема пищи
+  const getMealTimeName = (mealTime: string): string => {
+    switch (mealTime) {
+      case "morning":
+        return "Ранок"
+      case "afternoon":
+        return "День"
+      case "evening":
+        return "Вечір"
+      default:
+        return "Невідомо"
+    }
+  }
 
   // Calculate averages
   const averageCalories = Math.round(dailyData.reduce((sum, item) => sum + item.calories, 0) / dailyData.length)
@@ -196,8 +219,8 @@ export function StatisticsDashboard({ historyData, userProfile, onDeleteEntry }:
 
       <Card>
         <CardHeader>
-            <CardTitle>Макронутрієнти по дням</CardTitle>
-            <CardDescription>Динаміка споживання білків, жирів і вуглеводів</CardDescription>
+          <CardTitle>Макронутрієнти по дням</CardTitle>
+          <CardDescription>Динаміка споживання білків, жирів і вуглеводів</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-[300px]">
@@ -227,56 +250,101 @@ export function StatisticsDashboard({ historyData, userProfile, onDeleteEntry }:
             <table className="w-full border-collapse">
               <thead>
                 <tr className="border-b">
-                    <th className="text-left py-2 px-4">Дата</th>
-                    <th className="text-right py-2 px-4">Калорії</th>
-                    <th className="text-right py-2 px-4">Білки</th>
-                    <th className="text-right py-2 px-4">Жири</th>
-                    <th className="text-right py-2 px-4">Вуглеводи</th>
-                    <th className="text-right py-2 px-4">Вода</th>
-                    <th className="text-center py-2 px-4">Перевищення</th>
-                    <th className="text-center py-2 px-4">Дії</th>
+                  <th className="text-left py-2 px-4">Дата</th>
+                  <th className="text-left py-2 px-4">Прийом їжі</th>
+                  <th className="text-right py-2 px-4">Калорії</th>
+                  <th className="text-right py-2 px-4">Білки</th>
+                  <th className="text-right py-2 px-4">Жири</th>
+                  <th className="text-right py-2 px-4">Вуглеводи</th>
+                  <th className="text-right py-2 px-4">Вода</th>
+                  <th className="text-center py-2 px-4">Перевищення</th>
+                  <th className="text-center py-2 px-4">Дії</th>
                 </tr>
               </thead>
               <tbody>
-                {dailyData.map((item) => (
-                  <tr key={item.id} className="border-b hover:bg-muted/50">
-                    <td className="py-2 px-4">{new Date(item.date).toLocaleDateString()}</td>
-                    <td className="text-right py-2 px-4">{item.calories} ккал</td>
-                    <td className="text-right py-2 px-4">{item.proteins} г</td>
-                    <td className="text-right py-2 px-4">{item.fats} г</td>
-                    <td className="text-right py-2 px-4">{item.carbs} г</td>
-                    <td className="text-right py-2 px-4">{item.water} мл</td>
-                    <td className="text-center py-2 px-4">
-                      {item.limitExceeded ? (
-                        <span className="text-red-500">Да</span>
-                      ) : (
-                        <span className="text-green-500">Нет</span>
-                      )}
-                    </td>
-                    <td className="text-center py-2 px-4">
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Видалити запис?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Ви впевнені, що хочете видалити запис за {new Date(item.date).toLocaleDateString()}? Ця
-                              дія не підлягає.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Скасувати</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => onDeleteEntry(item.id)}>Видалити</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </td>
-                  </tr>
-                ))}
+                {dailyData.flatMap((item) =>
+                  item.mealEntries ? (
+                    item.mealEntries.map((entry: any) => (
+                      <tr key={entry.id} className="border-b hover:bg-muted/50">
+                        <td className="py-2 px-4">{new Date(entry.date).toLocaleDateString()}</td>
+                        <td className="py-2 px-4">{entry.mealTimeName}</td>
+                        <td className="text-right py-2 px-4">{entry.calories} ккал</td>
+                        <td className="text-right py-2 px-4">{entry.proteins} г</td>
+                        <td className="text-right py-2 px-4">{entry.fats} г</td>
+                        <td className="text-right py-2 px-4">{entry.carbs} г</td>
+                        <td className="text-right py-2 px-4">{entry.water} мл</td>
+                        <td className="text-center py-2 px-4">
+                          {entry.limitExceeded ? (
+                            <span className="text-red-500">Так</span>
+                          ) : (
+                            <span className="text-green-500">Ні</span>
+                          )}
+                        </td>
+                        <td className="text-center py-2 px-4">
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Видалити запис?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Ви впевнені, що хочете видалити запис за {new Date(entry.date).toLocaleDateString()}(
+                                  {entry.mealTimeName})? Цю дію не можна скасувати.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Скасувати</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => onDeleteEntry(entry.id)}>Видалити</AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr key={item.id} className="border-b hover:bg-muted/50">
+                      <td className="py-2 px-4">{new Date(item.date).toLocaleDateString()}</td>
+                      <td className="py-2 px-4">Весь день</td>
+                      <td className="text-right py-2 px-4">{item.calories} ккал</td>
+                      <td className="text-right py-2 px-4">{item.proteins} г</td>
+                      <td className="text-right py-2 px-4">{item.fats} г</td>
+                      <td className="text-right py-2 px-4">{item.carbs} г</td>
+                      <td className="text-right py-2 px-4">{item.water} мл</td>
+                      <td className="text-center py-2 px-4">
+                        {item.limitExceeded ? (
+                          <span className="text-red-500">Так</span>
+                        ) : (
+                          <span className="text-green-500">Ні</span>
+                        )}
+                      </td>
+                      <td className="text-center py-2 px-4">
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Видалити запис?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Ви впевнені, що хочете видалити запис за {new Date(item.date).toLocaleDateString()}? Цю
+                                дію не можна скасувати.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Скасувати</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => onDeleteEntry(item.id)}>Видалити</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </td>
+                    </tr>
+                  ),
+                )}
               </tbody>
             </table>
           </div>
