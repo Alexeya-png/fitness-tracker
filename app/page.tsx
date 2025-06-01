@@ -29,9 +29,14 @@ export default function FitnessTracker() {
   const [foodAnalysisLoading, setFoodAnalysisLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<string>("auth")
   const [hasEntryToday, setHasEntryToday] = useState(false)
-  const [currentDate, setCurrentDate] = useState(new Date())
+  const [calculationResult, setCalculationResult] = useState<any>(null) // Only for nutrition calculator
+  const [trackingFormData, setTrackingFormData] = useState<any>(null) // For pre-filling tracking form
+  const [mounted, setMounted] = useState(false)
+  const [currentDate, setCurrentDate] = useState(() => new Date())
 
-  const [calculationResult, setCalculationResult] = useState<any>(null)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -95,6 +100,8 @@ export default function FitnessTracker() {
 
   // Изменим функцию checkTodayEntry, чтобы она правильно определяла наличие всех приемов пищи
   const checkTodayEntry = async (uid: string) => {
+    if (!mounted) return
+
     try {
       const today = currentDate.toISOString().split("T")[0]
       const dailyRef = collection(db, "users", uid, "daily")
@@ -223,7 +230,11 @@ export default function FitnessTracker() {
     const result = calculateNutrition(weight, height, age, gender, activityValue)
     console.log("Calculation result:", result)
 
+    // Set calculation result to show "Ваша норма" card
     setCalculationResult(result)
+
+    // Also set tracking form data for pre-filling
+    setTrackingFormData(result)
 
     toast({
       title: "Результати",
@@ -271,7 +282,7 @@ export default function FitnessTracker() {
     const fats = Number.parseInt(formData.get("fats") as string)
     const carbs = Number.parseInt(formData.get("carbs") as string)
     const water = Number.parseInt(formData.get("water") as string)
-    const mealTime = (formData.get("mealTime") as string) || calculationResult?.mealTime || "morning"
+    const mealTime = (formData.get("mealTime") as string) || trackingFormData?.mealTime || "morning"
     const limitExceeded = formData.get("limitExceeded") === "on"
 
     const now = new Date(currentDate)
@@ -367,6 +378,8 @@ export default function FitnessTracker() {
       })
 
       form.reset()
+      // Clear both tracking form data and calculation result after saving
+      setTrackingFormData(null)
       setCalculationResult(null)
       fetchHistory(user.uid)
       fetchUserProfile(user.uid)
@@ -478,9 +491,11 @@ export default function FitnessTracker() {
   }
 
   // Изменим функцию advanceToNextDay, чтобы она корректно сбрасывала флаг hasEntryToday
-  // и проверяла наличие записей в новом дне
+  // и ��роверяла наличие записей в новом дне
 
   const advanceToNextDay = async () => {
+    if (!mounted) return
+
     const nextDay = new Date(currentDate)
     nextDay.setDate(nextDay.getDate() + 1)
 
@@ -576,8 +591,9 @@ export default function FitnessTracker() {
       // Извлекаем данные о питательных веществах из ответа
       const nutritionData = extractNutritionData(response.result, mealTime)
 
-      // Устанавливаем данные в состояние calculationResult
-      setCalculationResult(nutritionData)
+      // Устанавливаем данные ТОЛЬКО для предзаполнения формы отслеживания
+      // НЕ устанавливаем calculationResult, чтобы не показывать карточку "Ваша норма"
+      setTrackingFormData(nutritionData)
 
       // Сохраняем анализ в истории, если пользователь авторизован
       if (user) {
@@ -666,9 +682,11 @@ export default function FitnessTracker() {
               <p>
                 Поточна серія: <span className="font-medium">{userProfile?.streak || 0} днів</span>
               </p>
-              <p>
-                Поточна дата: <span className="font-medium">{currentDate.toLocaleDateString()}</span>
-              </p>
+              {mounted && (
+                <p>
+                  Поточна дата: <span className="font-medium">{currentDate.toLocaleDateString()}</span>
+                </p>
+              )}
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={advanceToNextDay}>
@@ -854,7 +872,7 @@ export default function FitnessTracker() {
                         name="calories"
                         type="number"
                         placeholder="Наприклад: 2000"
-                        defaultValue={calculationResult?.calories || ""}
+                        defaultValue={trackingFormData?.calories || ""}
                         required
                       />
                     </div>
@@ -865,7 +883,7 @@ export default function FitnessTracker() {
                         name="proteins"
                         type="number"
                         placeholder="Наприклад: 150"
-                        defaultValue={calculationResult?.proteins || ""}
+                        defaultValue={trackingFormData?.proteins || ""}
                         required
                       />
                     </div>
@@ -876,7 +894,7 @@ export default function FitnessTracker() {
                         name="fats"
                         type="number"
                         placeholder="Наприклад: 70"
-                        defaultValue={calculationResult?.fats || ""}
+                        defaultValue={trackingFormData?.fats || ""}
                         required
                       />
                     </div>
@@ -887,7 +905,7 @@ export default function FitnessTracker() {
                         name="carbs"
                         type="number"
                         placeholder="Наприклад: 200"
-                        defaultValue={calculationResult?.carbs || ""}
+                        defaultValue={trackingFormData?.carbs || ""}
                         required
                       />
                     </div>
@@ -895,10 +913,9 @@ export default function FitnessTracker() {
                       <Label htmlFor="water">Вода (мл)</Label>
                       <Input id="water" name="water" type="number" placeholder="Наприклад: 2000" required />
                     </div>
-                    ''{" "}
                     <div className="grid gap-2">
                       <Label htmlFor="mealTime">Час прийому їжі</Label>
-                      <Select name="mealTime" defaultValue={calculationResult?.mealTime || "morning"}>
+                      <Select name="mealTime" defaultValue={trackingFormData?.mealTime || "morning"}>
                         <SelectTrigger id="mealTime">
                           <SelectValue placeholder="Виберіть час прийому їжі" />
                         </SelectTrigger>
@@ -950,6 +967,8 @@ export default function FitnessTracker() {
           <AnalysisForm onAnalyze={handleAnalyzeFood} isLoading={foodAnalysisLoading} result={foodAnalysisResult} />
         </TabsContent>
       </Tabs>
+
+      {/* "Ваша норма" card only shows when calculationResult is set from nutrition calculator */}
       {calculationResult && (
         <div className="flex justify-center w-full my-6">
           <div className="w-full max-w-2xl">

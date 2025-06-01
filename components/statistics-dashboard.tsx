@@ -29,6 +29,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { useEffect, useState } from "react"
 
 interface StatisticsDashboardProps {
   historyData: any[]
@@ -37,6 +38,26 @@ interface StatisticsDashboardProps {
 }
 
 export function StatisticsDashboard({ historyData, userProfile, onDeleteEntry }: StatisticsDashboardProps) {
+  const [mounted, setMounted] = useState(false)
+
+  // Move this function to the top, after the mounted state
+  const getMealTimeName = (mealTime: string): string => {
+    switch (mealTime) {
+      case "morning":
+        return "Ранок"
+      case "afternoon":
+        return "День"
+      case "evening":
+        return "Вечір"
+      default:
+        return "Невідомо"
+    }
+  }
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   if (!historyData || historyData.length === 0) {
     return (
       <div className="text-center p-4">
@@ -81,7 +102,9 @@ export function StatisticsDashboard({ historyData, userProfile, onDeleteEntry }:
       return {
         date: group.date,
         id: group.id,
-        formattedDate: new Date(group.date).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }),
+        formattedDate: mounted
+          ? new Date(group.date).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" })
+          : group.date,
         calories: totalCalories,
         proteins: totalProteins,
         fats: totalFats,
@@ -92,20 +115,6 @@ export function StatisticsDashboard({ historyData, userProfile, onDeleteEntry }:
       }
     })
     .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
-
-  // Функция для получения названия времени приема пищи
-  const getMealTimeName = (mealTime: string): string => {
-    switch (mealTime) {
-      case "morning":
-        return "Ранок"
-      case "afternoon":
-        return "День"
-      case "evening":
-        return "Вечір"
-      default:
-        return "Невідомо"
-    }
-  }
 
   // Calculate averages
   const averageCalories = Math.round(dailyData.reduce((sum, item) => sum + item.calories, 0) / dailyData.length)
@@ -266,7 +275,7 @@ export function StatisticsDashboard({ historyData, userProfile, onDeleteEntry }:
                   item.mealEntries ? (
                     item.mealEntries.map((entry: any) => (
                       <tr key={entry.id} className="border-b hover:bg-muted/50">
-                        <td className="py-2 px-4">{new Date(entry.date).toLocaleDateString()}</td>
+                        {mounted && <td className="py-2 px-4">{new Date(entry.date).toLocaleDateString()}</td>}
                         <td className="py-2 px-4">{entry.mealTimeName}</td>
                         <td className="text-right py-2 px-4">{entry.calories} ккал</td>
                         <td className="text-right py-2 px-4">{entry.proteins} г</td>
@@ -306,7 +315,7 @@ export function StatisticsDashboard({ historyData, userProfile, onDeleteEntry }:
                     ))
                   ) : (
                     <tr key={item.id} className="border-b hover:bg-muted/50">
-                      <td className="py-2 px-4">{new Date(item.date).toLocaleDateString()}</td>
+                      {mounted && <td className="py-2 px-4">{new Date(item.date).toLocaleDateString()}</td>}
                       <td className="py-2 px-4">Весь день</td>
                       <td className="text-right py-2 px-4">{item.calories} ккал</td>
                       <td className="text-right py-2 px-4">{item.proteins} г</td>
